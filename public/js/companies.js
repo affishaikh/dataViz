@@ -1,9 +1,15 @@
+const colors = d3.scaleOrdinal(d3.schemeCategory10);
+const slow = () =>
+  d3
+    .transition()
+    .duration(750)
+    .ease(d3.easeLinear);
+
 const drawCompanies = (companies, metaForViz) => {
   const chartSize = { width: 800, height: 600 };
   const margin = { left: 100, right: 10, top: 10, bottom: 150 };
   const width = chartSize.width - margin.left - margin.right;
   const height = chartSize.height - margin.top - margin.bottom;
-  const colors = d3.scaleOrdinal(d3.schemeCategory10);
 
   const y = d3
     .scaleLinear()
@@ -17,10 +23,7 @@ const drawCompanies = (companies, metaForViz) => {
     .paddingInner(0.3)
     .paddingOuter(0.3);
 
-  const yAxis = d3
-    .axisLeft(y)
-    .tickFormat(d => `${d}Rs`)
-    .ticks(3);
+  const yAxis = d3.axisLeft(y).tickFormat(d => d + " Rs");
 
   const xAxis = d3.axisBottom(x);
 
@@ -33,6 +36,7 @@ const drawCompanies = (companies, metaForViz) => {
 
   const g = svg
     .append("g")
+    .attr("class", "rects")
     .attr("transform", `translate(${margin.left},${margin.top})`);
 
   g.append("text")
@@ -52,7 +56,7 @@ const drawCompanies = (companies, metaForViz) => {
     .attr("class", "y-axis")
     .call(yAxis);
 
-  const rects = g.selectAll("rect").data(companies);
+  const rects = g.selectAll("rect").data(companies, c => c.Name);
 
   rects
     .enter()
@@ -61,7 +65,7 @@ const drawCompanies = (companies, metaForViz) => {
     .attr("y", c => y(c[metaForViz.key]))
     .attr("width", x.bandwidth)
     .attr("height", c => y(0) - y(c[metaForViz.key]))
-    .attr("fill", c => colors(c[metaForViz.key]));
+    .attr("fill", c => colors(c.Name));
 
   g.append("g")
     .attr("class", "x-axis")
@@ -74,15 +78,23 @@ const drawCompanies = (companies, metaForViz) => {
     .attr("transform", "rotate(-40)");
 };
 
+const percentageFormat = d => `${d}%`;
+const ruppessFormat = d => `${d / 1000}k Cr Rs`;
+const formats = {
+  MarketCap: ruppessFormat,
+  DivYld: percentageFormat,
+  PE: percentageFormat
+};
+
 const updatCompanies = (companies, meta) => {
   const chartSize = { width: 800, height: 600 };
   const margin = { left: 100, right: 10, top: 10, bottom: 150 };
   const width = chartSize.width - margin.left - margin.right;
   const height = chartSize.height - margin.top - margin.bottom;
-  const colors = d3.scaleOrdinal(d3.schemeCategory10);
+  const maxValue = _.get(_.maxBy(companies, meta.key), meta.key, 0);
   const y = d3
     .scaleLinear()
-    .domain([0, _.maxBy(companies, meta.key)[meta.key]])
+    .domain([0, maxValue])
     .range([height, 0]);
 
   const x = d3
@@ -92,28 +104,64 @@ const updatCompanies = (companies, meta) => {
     .paddingInner(0.3)
     .paddingOuter(0.3);
 
+  const xAxis = d3.axisBottom(x);
+
+  const yAxis = d3.axisLeft(y).tickFormat(formats[meta.key]);
+
+  d3.select(".y-axis").call(yAxis);
+
+  d3.select(".x-axis").call(xAxis);
+
   d3.select(".y.axis-label").text(meta.yAxisLabel);
 
   d3.selectAll("rect")
-    .data(companies)
+    .data(companies, c => c.Name)
+    .exit()
+    .remove();
+
+  d3.select(".rects")
+    .selectAll("rect")
+    .data(companies, c => c.Name)
+    .enter()
+    .append("rect")
+    .attr("x", c => x(c.Name))
+    .attr("y", y(0))
+    .attr("width", x.bandwidth);
+
+  d3.selectAll("rect")
+    .attr("fill", c => colors(c.Name))
+    .transition(slow())
+    .attr("width", x.bandwidth)
     .attr("x", c => x(c.Name))
     .attr("y", c => y(c[meta.key]))
-    .attr("width", x.bandwidth)
-    .attr("height", c => y(0) - y(c[meta.key]))
-    .attr("fill", c => colors(c[meta.key]));
+    .attr("height", c => {
+      console.log(c.Name, " ", y(0) - y(c[meta.key]));
+      return y(0) - y(c[meta.key]);
+    });
 };
 
 const drawChart = companies => {
   let i = 1;
   const metasForViz = [
-    { key: "CMP", yAxisLabel: "CMP (Rs)" },
-    { key: "PE", yAxisLabel: "PE (Rs)" },
-    { key: "MarketCap", yAxisLabel: "MarketCap (Rs)" }
+    { key: "CMP", yAxisLabel: "CMP" },
+    { key: "PE", yAxisLabel: "PE" },
+    { key: "MarketCap", yAxisLabel: "MarketCap" },
+    { key: "DivYld", yAxisLabel: "DivYld" }
   ];
   drawCompanies(companies, metasForViz[0]);
   setInterval(() => {
-    updatCompanies(companies, metasForViz[i++ % 3]);
-  }, 2000);
+    updatCompanies(companies, metasForViz[i++ % metasForViz.length]);
+  }, 1000);
+
+  frequentlyMoveCompanies(companies, []);
+};
+
+const frequentlyMoveCompanies = (src, dest) => {
+  setInterval(() => {
+    const c = src.shift();
+    if (c) dest.push(c);
+    else [src, dest] = [dest, src];
+  }, 1000);
 };
 
 const main = () => {
